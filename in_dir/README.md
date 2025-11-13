@@ -1,0 +1,1 @@
+This folder stores input files that are to be read by the OCR script.

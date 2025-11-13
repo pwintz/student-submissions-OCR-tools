@@ -1,0 +1,15 @@
+; ╭─────────────────────────────────────────────────────────────╮
+; │  ╭───────────────────────────────────────────────────────╮  │
+; │  │             Tesseract configuration file.             │  │
+; │  ╰───────────────────────────────────────────────────────╯  │
+; ╰─────────────────────────────────────────────────────────────╯
+; A list of Tesseract options is available here:
+; https://muthu.co/all-tesseract-ocr-options/
+; ⋘──────── Disable builtin Tesseract dictionaries ────────⋙
+; Disable the system's word DAWG (directed acyclic word graph)."
+load_system_dawg     F
+; Disable the frequent word DAWG (directed acyclic word graph)"
+load_freq_dawg       F
+
+; Severely penalize words not in the word list
+language_model_penalty_non_dict_word 1.0
