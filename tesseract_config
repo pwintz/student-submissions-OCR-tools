@@ -1,15 +1,29 @@
-; ╭─────────────────────────────────────────────────────────────╮
-; │  ╭───────────────────────────────────────────────────────╮  │
-; │  │             Tesseract configuration file.             │  │
-; │  ╰───────────────────────────────────────────────────────╯  │
-; ╰─────────────────────────────────────────────────────────────╯
-; A list of Tesseract options is available here:
-; https://muthu.co/all-tesseract-ocr-options/
-; ⋘──────── Disable builtin Tesseract dictionaries ────────⋙
-; Disable the system's word DAWG (directed acyclic word graph)."
+# ╭─────────────────────────────────────────────────────────────╮
+# │  ╭───────────────────────────────────────────────────────╮  │
+# │  │             Tesseract configuration file.             │  │
+# │  ╰───────────────────────────────────────────────────────╯  │
+# ╰─────────────────────────────────────────────────────────────╯
+# A list of Tesseract options is available here:
+# https://muthu.co/all-tesseract-ocr-options/
+# ⋘──────── Disable builtin Tesseract dictionaries ────────⋙
+# Disable the system's word DAWG (directed acyclic word graph)."
 load_system_dawg     F
-; Disable the frequent word DAWG (directed acyclic word graph)"
+# Disable the frequent word DAWG (directed acyclic word graph)"
 load_freq_dawg       F
 
-; Severely penalize words not in the word list
-language_model_penalty_non_dict_word 1.0
+# Severely penalize words not in the word list
+language_model_penalty_non_dict_word 10.0
+
+# Ignore anything except characters that occur in "name: " or student's names.
+# We include the following:
+#   ":" because it appears in "Name: "
+#   "-" because it appears in hyphenated names
+#   "." because it appears after initials
+tessedit_char_whitelist "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ:-. "
+
+# ╭────────────────────────────────────────────────────────────────╮
+# │             Define a dictionary of students' names             │
+# ╰────────────────────────────────────────────────────────────────╯
+# Define a dictionary of students' names so that Tesseract recognizes them.
+# This can also be achieved using "--user-words student_names.user-words" as a command line argument.
+user_words_file student_names.user-words
