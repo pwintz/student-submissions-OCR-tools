@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+# Exit codes:
+#   2: No text found on page
+#   3: The pattern "Name: <name>" was not found on a page.
 
 # Configure script behavior (https://stackoverflow.com/a/2871034/6651650).
 # -e script exits on error 
@@ -11,8 +14,8 @@ set -x
 
 # ⋘──────── Set script options ────────⋙
 # TODO: Make these command line options.
-in_file_name_base=Revisions_11-12
-out_file_name_base=Revisions_11-12
+in_file_name_base=Revisions_11-17
+out_file_name_base=$in_file_name_base
 
 # ⋘──────── Construct paths ────────⋙
 input_file_path="in_dir/$in_file_name_base.pdf"
@@ -32,7 +35,6 @@ rm $output_directory -r 2> /dev/null || true
 mkdir $output_directory -p
 mkdir $output_pdfs_directory -p
 mkdir $output_page_lists_directory -p
-
 
 # ╭───────────────────────────────────────────────────────╮
 # │             Convert from PDF to an image.             │
@@ -98,6 +100,20 @@ for batch in $(seq 0 $(( (total_pages + convert_batch_size - 1) / convert_batch_
     student_names_file=student_names.user-words
     tesseract $tesseract_in_file $tesseract_out_file $tesseract_config_file
 
+    # Read the output file
+    file_text=$(cat $output_directory/page-$i.txt)
+
+    # ⋘──────── Check that the output is not empty ────────⋙
+    # Use wc ("word count") to check that the page text is not empty. 
+    # We use "wc < [file name]" to avoid printing the file name.
+    # Source: https://stackoverflow.com/a/10239606/6651650
+    if [[ -z $file_text ]]; then
+      echo "No text was found on page $i."
+      echo "   Image file: $tesseract_in_file"
+      echo "    Text file: $tesseract_out_file.txt" 
+      exit 2
+    fi
+
     # ╭────────────────────────────────────────────────────────────────────────╮
     # │             Use regular expression to match "Name: [NAME]"             │
     # ╰────────────────────────────────────────────────────────────────────────╯
@@ -110,11 +126,11 @@ for batch in $(seq 0 $(( (total_pages + convert_batch_size - 1) / convert_batch_
     # * "^.*": Anything preceding "Name:"
     # * "[^a-zA-Z]+": White space and other characters, not including letters. Includes the colon after "Name: ". Sometimes the OCR also generates "_" due to the underlining.
     # * "\w+([ ]+\w+)*)": The student's name
-    student=$(cat $output_directory/page-$i.txt | sed -Ez 's/^.*Name[^a-zA-Z]+([a-zA-Z.]+([ ]+\w+)*).*$/\1/')
+    student=$(echo $file_text | sed -Ez 's/^.*Name[^a-zA-Z]+([a-zA-Z.]+([ ]+\w+)*).*$/\1/')
 
     if [[ -z $student ]]; then
       echo "Student name was not found on page $i."
-      exit 1
+      exit 3
     fi
 
     # Write the current page number to the student's list of pages
