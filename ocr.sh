@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# ╭─────────────────────────────────────────────────────────────────────────╮
+# │  ╭───────────────────────────────────────────────────────────────────╮  │
+# │  │             OCR PDF Separator for Student Submissions             │  │
+# │  ╰───────────────────────────────────────────────────────────────────╯  │
+# ╰─────────────────────────────────────────────────────────────────────────╯
+
+
 
 # Exit codes:
 #   2: No text found on page
@@ -14,7 +21,7 @@ set -x
 
 # ⋘──────── Set script options ────────⋙
 # TODO: Make these command line options.
-in_file_name_base=Revisions_11-17
+in_file_name_base=Exam_4
 out_file_name_base=$in_file_name_base
 
 # ⋘──────── Construct paths ────────⋙
@@ -48,12 +55,20 @@ mkdir $output_page_lists_directory -p
 
 # At density=188, the height of the page is ~2070 pixels.
 pdf_rasterization_density=188
-name_x_offset=0 # pixels
-name_width=600 # pixels
+
+# Crop the 
+crop_width=0.4 # as a fraction of the total
+crop_height=0.1 # as a fraction of the total
+# Set the crop offset to align with the lower left corner.
+crop_x_offset=0.0 #
+crop_y_offset=$( bc <<< "1.0 - $crop_height" ) #
+
+# name_x_offset=0 # pixels
+# name_width=700 # pixels
 
 # Lower corner
-name_y_offset=1900 # pixels
-name_height=1000 # pixels (make it overly tall. convert will crop to the page.)
+# name_y_offset=1900 # pixels
+# name_height=1000 # pixels (make it overly tall. convert will crop to the page.)
 
 # Upper corner (old)
 # name_y_offset=200 # pixels
@@ -62,9 +77,9 @@ name_height=1000 # pixels (make it overly tall. convert will crop to the page.)
 convert_batch_size=10
 total_pages=$(pdftk "$input_file_path" dump_data | grep NumberOfPages | awk '{print $2}')
 
-# ! For testing, only do first few pages.
-# convert_batch_size=2
-# total_pages=6
+# # ! For testing, only do first few pages.
+# convert_batch_size=10
+# total_pages=107
 
 # ╭────────────────────────────────────────────────────────╮
 # │  ╭──────────────────────────────────────────────────╮  │
@@ -81,15 +96,21 @@ for batch in $(seq 0 $(( (total_pages + convert_batch_size - 1) / convert_batch_
     
     echo "Processing pages ${start_page} to ${end_page}..."
     
+    # Run the conversion.
     # Use ImageMagick's bracket notation to select page ranges.
     convert -density $pdf_rasterization_density \
-            -crop "${name_width}x${name_height}+${name_x_offset}+${name_y_offset}" \
-            "${input_file_path}[${start_page}-${end_page}]" \
-            "${output_directory}/page-%d.jpg"
+      "${input_file_path}[${start_page}-${end_page}]" \
+      -set page %[fx:w*$crop_width]x%[fx:h*$crop_height]-%[fx:w*$crop_x_offset]-%[fx:h*$crop_y_offset] -crop +0+0 \
+      "${output_directory}/page-%d.jpg"
+    # convert -density $pdf_rasterization_density \
+    #         -crop "${name_width}x${name_height}+${name_x_offset}+${name_y_offset}" \
+    #         "${input_file_path}[${start_page}-${end_page}]" \
+    #         "${output_directory}/page-%d.jpg"
 
   # ╭───────────────────────────────────────────────╮
   # │             Use OCR to Find Names             │
   # ╰───────────────────────────────────────────────╯
+  is_any_page_missing=false
   i=$start_page
   while [[ -e  $output_directory/page-$i.jpg ]]; # If file exists.
   do 
@@ -100,8 +121,9 @@ for batch in $(seq 0 $(( (total_pages + convert_batch_size - 1) / convert_batch_
     student_names_file=student_names.user-words
     tesseract $tesseract_in_file $tesseract_out_file $tesseract_config_file
 
-    # Read the output file
-    file_text=$(cat $output_directory/page-$i.txt)
+    # ⋘──────── Read the output file ────────⋙
+    # ! We use --show-ends to mark each line ending with "$". This allows us to write a regex that avoids matching across multiple lines when we echo this variable (which seems to drop line breaks). 
+    file_text=$(cat --show-ends $output_directory/page-$i.txt)
 
     # ⋘──────── Check that the output is not empty ────────⋙
     # Use wc ("word count") to check that the page text is not empty. 
@@ -111,7 +133,12 @@ for batch in $(seq 0 $(( (total_pages + convert_batch_size - 1) / convert_batch_
       echo "No text was found on page $i."
       echo "   Image file: $tesseract_in_file"
       echo "    Text file: $tesseract_out_file.txt" 
-      exit 2
+      echo "No text was found on page $i." >> $output_directory/errors.txt
+      is_any_page_missing=true
+
+      # Increment counter
+      i=$(($i + 1))
+      continue
     fi
 
     # ╭────────────────────────────────────────────────────────────────────────╮
@@ -126,11 +153,19 @@ for batch in $(seq 0 $(( (total_pages + convert_batch_size - 1) / convert_batch_
     # * "^.*": Anything preceding "Name:"
     # * "[^a-zA-Z]+": White space and other characters, not including letters. Includes the colon after "Name: ". Sometimes the OCR also generates "_" due to the underlining.
     # * "\w+([ ]+\w+)*)": The student's name
-    student=$(echo $file_text | sed -Ez 's/^.*Name[^a-zA-Z]+([a-zA-Z.]+([ ]+\w+)*).*$/\1/')
+    # !! It's important that we use 'cat' here instead of just echoing $file_text, because using "echo" seems to lose the line breaks.
+    # student=$(cat $output_directory/page-$i.txt | sed -Ez 's/^.*Name[^a-zA-Z]+([a-zA-Z.]+([ ]+\w+)*).*$/\1/')
+    student=$(echo $file_text/page-$i.txt | sed -Ez 's/^.*Name[^a-zA-Z]+([a-zA-Z.]+([ ]+\w+)*).*$/\1/')
+    student=$(echo $student | sed -Ez 's/^.*Nan[^a-zA-Z]+([a-zA-Z.]+([ ]+\w+)*).*$/\1/')
 
     if [[ -z $student ]]; then
-      echo "Student name was not found on page $i."
-      exit 3
+      echo "Student name was not found on page $i. The text was $file_text."
+      echo "Student name was not found on page $i. The text was $file_text." >> $output_directory/errors.txt
+      is_any_page_missing=true
+    
+      # Increment counter
+      i=$(($i + 1))
+      continue
     fi
 
     # Write the current page number to the student's list of pages
@@ -142,7 +177,9 @@ for batch in $(seq 0 $(( (total_pages + convert_batch_size - 1) / convert_batch_
   done
 done
 
-
+if $is_any_page_missing; then
+  exit 2
+fi
 
 # ╭─────────────────────────────────────────────────────────────────────╮
 # │             Use the PDF Toolkit (pdftk) to Select Pages             │
