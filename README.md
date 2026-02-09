@@ -14,3 +14,16 @@ Create PDFs with student names at fixed locations.
 
 ## PDF Separation
 Add a PDF to `in_dir`.
+
+# Setup for start of a new class
+
+1. Add all of the students names to `student_names.user-words`
+
+# Troubleshooting:
+
+**Problem:** A page is placed into the wrong student 
+**Solution:** 
+
+1. Run the initial pass of OCR with `regenerate_page_lists=true`. 
+2. Set `regenerate_page_lists=false` and modify the `.txt` files in `student_page_lists`. 
+3. Run OCR again.

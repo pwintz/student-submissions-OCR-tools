@@ -5,8 +5,6 @@
 # │  ╰───────────────────────────────────────────────────────────────────╯  │
 # ╰─────────────────────────────────────────────────────────────────────────╯
 
-
-
 # Exit codes:
 #   2: No text found on page
 #   3: The pattern "Name: <name>" was not found on a page.
@@ -21,12 +19,16 @@ set -x
 
 # ⋘──────── Set script options ────────⋙
 # TODO: Make these command line options.
-in_file_name_base=Exam_4
-out_file_name_base=$in_file_name_base
+in_file_name_base='math-3b quiz 2-4-2026'
+out_file_name_base="Mat-3B_Quiz_Feb_4"
+
+# ⋘──────── Options ────────⋙
+# Set regenerate_page_lists=false to skip rasterizing the PDFS and running Tesseract. 
+regenerate_page_lists=false
 
 # ⋘──────── Construct paths ────────⋙
-input_file_path="in_dir/$in_file_name_base.pdf"
-output_directory="out_dir/$out_file_name_base"
+input_file_path="in_dir/${in_file_name_base}.pdf"
+output_directory="out_dir/${out_file_name_base}"
 output_pdfs_directory="$output_directory/student-pdfs"
 output_page_lists_directory="$output_directory/student_page_lists"
 
@@ -37,7 +39,12 @@ output_page_lists_directory="$output_directory/student_page_lists"
 
 # Remove the student_page_lists folder if it exists. Otherwise, send the error message to /dev/null and ignore the error using "|| true".
 # https://superuser.com/a/435951/734378
-rm $output_directory -r 2> /dev/null || true
+if $regenerate_page_lists; then
+  rm $output_directory -r 2> /dev/null || true
+else
+  #  Only delete the PDF output folder.
+  rm $output_pdfs_directory -r 2> /dev/null || true
+fi
 
 mkdir $output_directory -p
 mkdir $output_pdfs_directory -p
@@ -81,101 +88,109 @@ total_pages=$(pdftk "$input_file_path" dump_data | grep NumberOfPages | awk '{pr
 # convert_batch_size=10
 # total_pages=107
 
+# Track whether name was missing from any pages.
+is_any_page_missing=false
+
 # ╭────────────────────────────────────────────────────────╮
 # │  ╭──────────────────────────────────────────────────╮  │
 # │  │             Perform OCR on each page             │  │
 # │  ╰──────────────────────────────────────────────────╯  │
 # ╰────────────────────────────────────────────────────────╯
-for batch in $(seq 0 $(( (total_pages + convert_batch_size - 1) / convert_batch_size - 1 ))); do
-    start_page=$((batch * convert_batch_size))
-    end_page=$((start_page + convert_batch_size - 1))
-    
-    if [ $end_page -ge $total_pages ]; then
-        end_page=$((total_pages - 1))
-    fi
-    
-    echo "Processing pages ${start_page} to ${end_page}..."
-    
-    # Run the conversion.
-    # Use ImageMagick's bracket notation to select page ranges.
-    convert -density $pdf_rasterization_density \
-      "${input_file_path}[${start_page}-${end_page}]" \
-      -set page %[fx:w*$crop_width]x%[fx:h*$crop_height]-%[fx:w*$crop_x_offset]-%[fx:h*$crop_y_offset] -crop +0+0 \
-      "${output_directory}/page-%d.jpg"
-    # convert -density $pdf_rasterization_density \
-    #         -crop "${name_width}x${name_height}+${name_x_offset}+${name_y_offset}" \
-    #         "${input_file_path}[${start_page}-${end_page}]" \
-    #         "${output_directory}/page-%d.jpg"
+if $regenerate_page_lists; then
+  for batch in $(seq 0 $(( (total_pages + convert_batch_size - 1) / convert_batch_size - 1 ))); do
+      start_page=$((batch * convert_batch_size))
+      end_page=$((start_page + convert_batch_size - 1))
+      
+      if [ $end_page -ge $total_pages ]; then
+          end_page=$((total_pages - 1))
+      fi
+      
+      echo "Processing pages ${start_page} to ${end_page}..."
+      
+      # Run the conversion.
+      # Use ImageMagick's bracket notation to select page ranges.
+      convert -density $pdf_rasterization_density \
+        "${input_file_path}[${start_page}-${end_page}]" \
+        -set page %[fx:w*$crop_width]x%[fx:h*$crop_height]-%[fx:w*$crop_x_offset]-%[fx:h*$crop_y_offset] -crop +0+0 \
+        "${output_directory}/page-%d.jpg"
+      # convert -density $pdf_rasterization_density \
+      #         -crop "${name_width}x${name_height}+${name_x_offset}+${name_y_offset}" \
+      #         "${input_file_path}[${start_page}-${end_page}]" \
+      #         "${output_directory}/page-%d.jpg"
 
-  # ╭───────────────────────────────────────────────╮
-  # │             Use OCR to Find Names             │
-  # ╰───────────────────────────────────────────────╯
-  is_any_page_missing=false
-  i=$start_page
-  while [[ -e  $output_directory/page-$i.jpg ]]; # If file exists.
-  do 
-    # ⋘──────── Run tesseract OCR ────────⋙
-    tesseract_in_file=$output_directory/page-$i.jpg
-    tesseract_out_file=$output_directory/page-$i 
-    tesseract_config_file=tesseract_config
-    student_names_file=student_names.user-words
-    tesseract $tesseract_in_file $tesseract_out_file $tesseract_config_file
+    # ╭───────────────────────────────────────────────╮
+    # │             Use OCR to Find Names             │
+    # ╰───────────────────────────────────────────────╯
+    i=$start_page
+    while [[ -e  $output_directory/page-$i.jpg ]]; # If file exists.
+    do 
+      # ⋘──────── Run tesseract OCR ────────⋙
+      tesseract_in_file=$output_directory/page-$i.jpg
+      tesseract_out_file=$output_directory/page-$i 
+      tesseract_config_file=tesseract_config
+      student_names_file=student_names.user-words
+      tesseract $tesseract_in_file $tesseract_out_file $tesseract_config_file
 
-    # ⋘──────── Read the output file ────────⋙
-    # ! We use --show-ends to mark each line ending with "$". This allows us to write a regex that avoids matching across multiple lines when we echo this variable (which seems to drop line breaks). 
-    file_text=$(cat --show-ends $output_directory/page-$i.txt)
+      # ⋘──────── Read the output file ────────⋙
+      # ! We use --show-ends to mark each line ending with "$". This allows us to write a regex that avoids matching across multiple lines when we echo this variable (which seems to drop line breaks). 
+      file_text=$(cat --show-ends $output_directory/page-$i.txt)
 
-    # ⋘──────── Check that the output is not empty ────────⋙
-    # Use wc ("word count") to check that the page text is not empty. 
-    # We use "wc < [file name]" to avoid printing the file name.
-    # Source: https://stackoverflow.com/a/10239606/6651650
-    if [[ -z $file_text ]]; then
-      echo "No text was found on page $i."
-      echo "   Image file: $tesseract_in_file"
-      echo "    Text file: $tesseract_out_file.txt" 
-      echo "No text was found on page $i." >> $output_directory/errors.txt
-      is_any_page_missing=true
+      # ⋘──────── Check that the output is not empty ────────⋙
+      # Use wc ("word count") to check that the page text is not empty. 
+      # We use "wc < [file name]" to avoid printing the file name.
+      # Source: https://stackoverflow.com/a/10239606/6651650
+      if [[ -z $file_text ]]; then
+        echo "No text was found on page $i."
+        echo "   Image file: $tesseract_in_file"
+        echo "    Text file: $tesseract_out_file.txt" 
+        echo "No text was found on page $i." >> $output_directory/errors.txt
+        is_any_page_missing=true
+
+        # Increment counter
+        i=$(($i + 1))
+        continue
+      fi
+
+      # ╭────────────────────────────────────────────────────────────────────────╮
+      # │             Use regular expression to match "Name: [NAME]"             │
+      # ╰────────────────────────────────────────────────────────────────────────╯
+      # Read the text generated by tesseract 
+      student=$(cat $output_directory/page-$i.txt)
+
+      # Read the text from page i, using regex to find "Name: <name of the student>". 
+      # Regex101.com Link:
+      # https://regex101.com/r/tniHLV/1
+      # The format of this regular expression is 
+      # * "^.*": Anything preceding "Name:"
+      # * "[^a-zA-Z]+": White space and other characters, not including letters. Includes the colon after "Name: ". Sometimes the OCR also generates "_" due to the underlining.
+      # * "\w+([ ]+\w+)*)": The student's name
+      # !! It's important that we use 'cat' here instead of just echoing $file_text, because using "echo" seems to lose the line breaks.
+      # student=$(cat $output_directory/page-$i.txt | sed -Ez 's/^.*Name[^a-zA-Z]+([a-zA-Z.]+([ ]+\w+)*).*$/\1/')
+
+      student=$(echo $student | sed -Ez 's/[.,]/ /g')
+      student=$(echo $student | sed -Ez 's/^.*Name[^a-zA-Z]+([a-zA-Z,.-]+([ ]+\w+)*).*$/\1/')
+      # student=$(echo $student | sed -Ez 's/^.*Name[^a-zA-Z]+([a-zA-Z.-]+([ ]+\w+)*).*$/\1/')
+      # student=$(echo $student | sed -Ez 's/^.*Nan[^a-zA-Z]+([a-zA-Z.]+([ ]+\w+)*).*$/\1/')
+
+      if [[ -z $student ]]; then
+        echo "Student name was not found on page $i. The text was $file_text."
+        echo "Student name was not found on page $i. The text was $file_text." >> $output_directory/errors.txt
+        is_any_page_missing=true
+      
+        # Increment counter
+        i=$(($i + 1))
+        continue
+      fi
+
+      # Write the current page number to the student's list of pages
+      # We add +1 to the index so that it is one-indexed instead of zero-indexed, which makes it easier to use as page numbers for pdftk.
+      echo $(($i + 1)) >> "$output_page_lists_directory/$student.txt"
 
       # Increment counter
       i=$(($i + 1))
-      continue
-    fi
-
-    # ╭────────────────────────────────────────────────────────────────────────╮
-    # │             Use regular expression to match "Name: [NAME]"             │
-    # ╰────────────────────────────────────────────────────────────────────────╯
-    # Read the text generated by tesseract 
-    # student=$(cat $in_file_name_base/page-$i.txt)
-    # Read the text from page i, using regex to find "Name: <name of the student>". 
-    # Regex101.com Link:
-    # https://regex101.com/r/tniHLV/1
-    # The format of this regular expression is 
-    # * "^.*": Anything preceding "Name:"
-    # * "[^a-zA-Z]+": White space and other characters, not including letters. Includes the colon after "Name: ". Sometimes the OCR also generates "_" due to the underlining.
-    # * "\w+([ ]+\w+)*)": The student's name
-    # !! It's important that we use 'cat' here instead of just echoing $file_text, because using "echo" seems to lose the line breaks.
-    # student=$(cat $output_directory/page-$i.txt | sed -Ez 's/^.*Name[^a-zA-Z]+([a-zA-Z.]+([ ]+\w+)*).*$/\1/')
-    student=$(echo $file_text/page-$i.txt | sed -Ez 's/^.*Name[^a-zA-Z]+([a-zA-Z.]+([ ]+\w+)*).*$/\1/')
-    student=$(echo $student | sed -Ez 's/^.*Nan[^a-zA-Z]+([a-zA-Z.]+([ ]+\w+)*).*$/\1/')
-
-    if [[ -z $student ]]; then
-      echo "Student name was not found on page $i. The text was $file_text."
-      echo "Student name was not found on page $i. The text was $file_text." >> $output_directory/errors.txt
-      is_any_page_missing=true
-    
-      # Increment counter
-      i=$(($i + 1))
-      continue
-    fi
-
-    # Write the current page number to the student's list of pages
-    # We add +1 to the index so that it is one-indexed instead of zero-indexed, which makes it easier to use as page numbers for pdftk.
-    echo $(($i + 1)) >> "$output_page_lists_directory/$student.txt"
-
-    # Increment counter
-    i=$(($i + 1))
+    done
   done
-done
+fi # End of if $regenerate_page_lists block
 
 if $is_any_page_missing; then
   exit 2
@@ -192,6 +207,6 @@ for filename in $output_page_lists_directory/*; do
   student_pages=$(cat "$filename") 
 
   # Use pdftk to extract the student's pages.
-  pdftk $input_file_path cat $student_pages output "$output_pdfs_directory/${out_file_name_base} $student.pdf"
+  pdftk "$input_file_path" cat $student_pages output "$output_pdfs_directory/${out_file_name_base} $student.pdf"
 done
 
