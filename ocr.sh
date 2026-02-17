@@ -14,41 +14,53 @@
 # -u errors on undefined variables 
 # -o pipefail exits on command pipe failures. 
 set -euo pipefail
-# -x prints commands before execution 
-set -x
+
+# ⋘──────── Debugging Configuration ────────⋙
+# - Uncomment `set -x` to print commands before execution 
+# set -x
 
 # ⋘──────── Set script options ────────⋙
 # TODO: Make these command line options.
-in_file_name_base='math-3b quiz 2-4-2026'
-out_file_name_base="Mat-3B_Quiz_Feb_4"
+in_file_name_base='Math 2 - Quiz 2 - Feb 11'
+out_sub_directory='Math 2'
+out_file_name_base="Quiz 2"
 
 # ⋘──────── Options ────────⋙
-# Set regenerate_page_lists=false to skip rasterizing the PDFS and running Tesseract. 
-regenerate_page_lists=false
-
-# ⋘──────── Construct paths ────────⋙
-input_file_path="in_dir/${in_file_name_base}.pdf"
-output_directory="out_dir/${out_file_name_base}"
-output_pdfs_directory="$output_directory/student-pdfs"
-output_page_lists_directory="$output_directory/student_page_lists"
+# Set regenerate_existing_page_lists=false to skip rasterizing the PDFS and running Tesseract. 
+regenerate_existing_page_lists=false
 
 # ╭───────────────────────────────────────────╮
 # │             Setup directories             │
 # ╰───────────────────────────────────────────╯
+# ⋘──────── Construct paths ────────⋙
+input_file_path="in_dir/${in_file_name_base}.pdf"
+output_directory="out_dir/${out_sub_directory}/${out_file_name_base}"
+output_pdfs_directory="$output_directory/student-pdfs"
+output_page_lists_directory="$output_directory/student_page_lists"
+
+# ⋘──────── Calculate generate_page_lists ────────⋙
+if [[ -d "$output_directory" ]]; then
+  echo "Regenerate the page lists if regenerate_existing_page_lists=$regenerate_existing_page_lists is true."
+  generate_page_lists=$regenerate_existing_page_lists
+else
+  echo "Generate the page lists, since they do not exist yet."
+  generate_page_lists=true
+fi
+
 # ⋘──────── Create output directory for given PDF  ────────⋙
 
 # Remove the student_page_lists folder if it exists. Otherwise, send the error message to /dev/null and ignore the error using "|| true".
 # https://superuser.com/a/435951/734378
-if $regenerate_page_lists; then
-  rm $output_directory -r 2> /dev/null || true
+if $generate_page_lists; then
+  rm "$output_directory" -r 2> /dev/null || true
 else
   #  Only delete the PDF output folder.
-  rm $output_pdfs_directory -r 2> /dev/null || true
+  rm "$output_pdfs_directory" -r 2> /dev/null || true
 fi
 
-mkdir $output_directory -p
-mkdir $output_pdfs_directory -p
-mkdir $output_page_lists_directory -p
+mkdir "$output_directory" -p
+mkdir "$output_pdfs_directory" -p
+mkdir "$output_page_lists_directory" -p
 
 # ╭───────────────────────────────────────────────────────╮
 # │             Convert from PDF to an image.             │
@@ -96,7 +108,8 @@ is_any_page_missing=false
 # │  │             Perform OCR on each page             │  │
 # │  ╰──────────────────────────────────────────────────╯  │
 # ╰────────────────────────────────────────────────────────╯
-if $regenerate_page_lists; then
+if $generate_page_lists; then
+  echo "Preforming OCR on each page to generate list of pages for each student." 
   for batch in $(seq 0 $(( (total_pages + convert_batch_size - 1) / convert_batch_size - 1 ))); do
       start_page=$((batch * convert_batch_size))
       end_page=$((start_page + convert_batch_size - 1))
@@ -105,7 +118,7 @@ if $regenerate_page_lists; then
           end_page=$((total_pages - 1))
       fi
       
-      echo "Processing pages ${start_page} to ${end_page}..."
+      echo "Generating PNGs from pages ${start_page} to ${end_page}."
       
       # Run the conversion.
       # Use ImageMagick's bracket notation to select page ranges.
@@ -122,18 +135,19 @@ if $regenerate_page_lists; then
     # │             Use OCR to Find Names             │
     # ╰───────────────────────────────────────────────╯
     i=$start_page
-    while [[ -e  $output_directory/page-$i.jpg ]]; # If file exists.
+    while [[ -e  "$output_directory/page-$i.jpg" ]]; # If file exists.
     do 
+      echo "Applying Tesseract OCR to the PNGs from pages ${start_page} to ${end_page}."
       # ⋘──────── Run tesseract OCR ────────⋙
-      tesseract_in_file=$output_directory/page-$i.jpg
-      tesseract_out_file=$output_directory/page-$i 
+      tesseract_in_file="$output_directory/page-$i.jpg"
+      tesseract_out_file="$output_directory/page-$i"
       tesseract_config_file=tesseract_config
       student_names_file=student_names.user-words
-      tesseract $tesseract_in_file $tesseract_out_file $tesseract_config_file
+      tesseract "$tesseract_in_file" "$tesseract_out_file" $tesseract_config_file
 
       # ⋘──────── Read the output file ────────⋙
       # ! We use --show-ends to mark each line ending with "$". This allows us to write a regex that avoids matching across multiple lines when we echo this variable (which seems to drop line breaks). 
-      file_text=$(cat --show-ends $output_directory/page-$i.txt)
+      file_text=$(cat --show-ends "$output_directory/page-$i.txt")
 
       # ⋘──────── Check that the output is not empty ────────⋙
       # Use wc ("word count") to check that the page text is not empty. 
@@ -143,7 +157,7 @@ if $regenerate_page_lists; then
         echo "No text was found on page $i."
         echo "   Image file: $tesseract_in_file"
         echo "    Text file: $tesseract_out_file.txt" 
-        echo "No text was found on page $i." >> $output_directory/errors.txt
+        echo "No text was found on page $i." >> "$output_directory/errors.txt"
         is_any_page_missing=true
 
         # Increment counter
@@ -155,7 +169,7 @@ if $regenerate_page_lists; then
       # │             Use regular expression to match "Name: [NAME]"             │
       # ╰────────────────────────────────────────────────────────────────────────╯
       # Read the text generated by tesseract 
-      student=$(cat $output_directory/page-$i.txt)
+      student=$(cat "$output_directory/page-$i.txt")
 
       # Read the text from page i, using regex to find "Name: <name of the student>". 
       # Regex101.com Link:
@@ -190,7 +204,7 @@ if $regenerate_page_lists; then
       i=$(($i + 1))
     done
   done
-fi # End of if $regenerate_page_lists block
+fi # End of if $generate_page_lists block
 
 if $is_any_page_missing; then
   exit 2
@@ -199,7 +213,8 @@ fi
 # ╭─────────────────────────────────────────────────────────────────────╮
 # │             Use the PDF Toolkit (pdftk) to Select Pages             │
 # ╰─────────────────────────────────────────────────────────────────────╯
-for filename in $output_page_lists_directory/*; do 
+echo "Extracting pages for each student using pdftk". 
+for filename in "$output_page_lists_directory"/*; do 
   # Use "basename" to get the student name without the extension (".txt")
   student=$(basename "$filename" .txt)
 
@@ -207,6 +222,12 @@ for filename in $output_page_lists_directory/*; do
   student_pages=$(cat "$filename") 
 
   # Use pdftk to extract the student's pages.
-  pdftk "$input_file_path" cat $student_pages output "$output_pdfs_directory/${out_file_name_base} $student.pdf"
+  pdftk "$input_file_path" cat $student_pages output "$output_pdfs_directory/${out_file_name_base} - $student.pdf"
 done
 
+n_pdfs_created=$(ls "$output_pdfs_directory"| wc -l)
+
+echo "Finished. There were $n_pdfs_created PDFs generated in "
+echo
+echo -e "\t${output_pdfs_directory}"
+echo
